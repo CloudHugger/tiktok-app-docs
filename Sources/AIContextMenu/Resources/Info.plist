@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.cloudhugger.AIContextMenu</string>
+    <key>CFBundleName</key>
+    <string>AI Context Menu</string>
+    <key>CFBundleDisplayName</key>
+    <string>AI Context Menu</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>AI Context Menu needs Accessibility access to detect selected text system-wide and inject items into the right-click menu.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>AI Context Menu needs Screen Recording access to capture the active window and send it to an AI service.</string>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Ask AI</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>handleAskAIService</string>
+            <key>NSPortName</key>
+            <string>AIContextMenu</string>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSStringPboardType</string>
+                <string>public.utf8-plain-text</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Send to AI</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>handleSendFileToAIService</string>
+            <key>NSPortName</key>
+            <string>AIContextMenu</string>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSFilenamesPboardType</string>
+                <string>public.file-url</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

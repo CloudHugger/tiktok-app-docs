@@ -1,0 +1,37 @@
+name: AIContextMenu
+options:
+  bundleIdPrefix: com.cloudhugger
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.4"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  AIContextMenu:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/AIContextMenu
+        excludes:
+          - Resources
+    resources:
+      - Sources/AIContextMenu/Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cloudhugger.AIContextMenu
+        PRODUCT_NAME: AI Context Menu
+        INFOPLIST_FILE: Sources/AIContextMenu/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/AIContextMenu/Resources/AIContextMenu.entitlements
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - sdk: ScreenCaptureKit.framework
+      - sdk: ServiceManagement.framework
