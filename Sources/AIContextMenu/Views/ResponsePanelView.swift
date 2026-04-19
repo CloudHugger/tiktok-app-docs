@@ -47,25 +47,30 @@ struct ResponsePanelView: View {
 final class ResponsePanelController {
     static let shared = ResponsePanelController()
     private var panel: NSPanel?
+    private var observer: NSObjectProtocol?
 
     private init() {
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleResponse(_:)), name: .showAIResponse, object: nil
-        )
-    }
-
-    @objc private func handleResponse(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let text = info["text"] as? String,
-              let source = info["source"] as? String else { return }
-        show(response: text, source: source)
+        // Block-based observer on .main guarantees the handler runs on the main
+        // thread — required because this class is @MainActor and we create NSWindows.
+        observer = NotificationCenter.default.addObserver(
+            forName: .showAIResponse,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let info = notification.userInfo,
+                  let text   = info["text"]   as? String,
+                  let source = info["source"] as? String else { return }
+            self.show(response: text, source: source)
+        }
     }
 
     func show(response: String, source: String) {
         panel?.close()
 
-        let view = ResponsePanelView(response: response, source: source)
-        let controller = NSHostingController(rootView: view)
+        let controller = NSHostingController(
+            rootView: ResponsePanelView(response: response, source: source)
+        )
         let p = NSPanel(contentViewController: controller)
         p.styleMask = [.titled, .closable, .fullSizeContentView, .nonactivatingPanel]
         p.titlebarAppearsTransparent = true
@@ -74,9 +79,8 @@ final class ResponsePanelController {
         p.setContentSize(NSSize(width: 480, height: 340))
 
         if let screen = NSScreen.main {
-            let x = screen.frame.maxX - 520
-            let y = screen.frame.maxY - 400
-            p.setFrameOrigin(NSPoint(x: x, y: y))
+            p.setFrameOrigin(NSPoint(x: screen.frame.maxX - 520,
+                                     y: screen.frame.maxY - 400))
         }
 
         p.makeKeyAndOrderFront(nil)

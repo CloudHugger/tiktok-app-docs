@@ -31,32 +31,27 @@ final class ContextMenuManager: NSObject {
 
         let mask = CGEventMask(1 << CGEventType.rightMouseDown.rawValue)
 
-        // CGEventTap callback must be a plain C function — it runs on the tap's
-        // thread, not the main thread. We only post a notification here; all
-        // AppKit/SwiftUI work happens on the main actor via the observer.
-        let callback: CGEventTapCallBack = { _, _, event, refcon in
-            guard let refcon else { return Unmanaged.passRetained(event) }
-            // Notify on the main thread — unretained is safe: the manager lives
-            // for the app's lifetime.
-            DispatchQueue.main.async {
-                _ = Unmanaged<ContextMenuManager>.fromOpaque(refcon).takeUnretainedValue()
-                NotificationCenter.default.post(name: .rightClickDetected, object: nil)
-            }
-            return Unmanaged.passRetained(event)
-        }
-
+        // Must be a non-capturing closure — Swift only bridges a closure to a
+        // C function pointer when it captures nothing from the enclosing scope.
         eventTap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: mask,
-            callback: callback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
+            callback: { _, _, event, _ -> Unmanaged<CGEvent>? in
+                guard let event else { return nil }
+                // Hop to main thread before touching any AppKit/actor state.
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .rightClickDetected, object: nil)
+                }
+                return Unmanaged.passRetained(event)
+            },
+            userInfo: nil
         )
 
         if let tap = eventTap {
-            let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+            let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
         }
     }
@@ -76,7 +71,6 @@ final class ContextMenuManager: NSObject {
         guard !enabledServices.isEmpty else { return }
 
         let menu = buildMenu(content: content, services: enabledServices, context: context)
-
         guard menu.numberOfItems > 0 else { return }
 
         let position = NSEvent.mouseLocation
@@ -89,7 +83,7 @@ final class ContextMenuManager: NSObject {
         let title: String
         let validServices: [ServiceConfig]
 
-        if let content = content {
+        if let content {
             switch content.contentType {
             case .text:
                 title = "Ask AI"
@@ -106,12 +100,12 @@ final class ContextMenuManager: NSObject {
             validServices = services
         }
 
-        if validServices.isEmpty { return menu }
+        guard !validServices.isEmpty else { return menu }
 
-        let headerItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        headerItem.isEnabled = false
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(headerItem)
+        let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(.separator())
+        menu.addItem(header)
 
         if validServices.count == 1, let single = validServices.first {
             let item = makeServiceItem(single, content: content, context: context)
@@ -124,20 +118,23 @@ final class ContextMenuManager: NSObject {
         }
 
         if content == nil {
-            menu.addItem(NSMenuItem.separator())
-            let screenItem = NSMenuItem(title: "Capture Active Window…", action: #selector(captureWindow), keyEquivalent: "")
-            screenItem.target = self
-            menu.addItem(screenItem)
+            menu.addItem(.separator())
+            let win = NSMenuItem(title: "Capture Active Window…",
+                                 action: #selector(captureWindow), keyEquivalent: "")
+            win.target = self
+            menu.addItem(win)
 
-            let selItem = NSMenuItem(title: "Capture Selection…", action: #selector(captureSelection), keyEquivalent: "")
-            selItem.target = self
-            menu.addItem(selItem)
+            let sel = NSMenuItem(title: "Capture Selection…",
+                                 action: #selector(captureSelection), keyEquivalent: "")
+            sel.target = self
+            menu.addItem(sel)
         }
 
         return menu
     }
 
-    private func makeServiceItem(_ config: ServiceConfig, content: DetectedContent?, context: ModelContext) -> NSMenuItem {
+    private func makeServiceItem(_ config: ServiceConfig, content: DetectedContent?,
+                                  context: ModelContext) -> NSMenuItem {
         let item = NSMenuItem(
             title: config.serviceType.displayName,
             action: #selector(serviceItemClicked(_:)),
@@ -177,6 +174,7 @@ final class ContextMenuManager: NSObject {
     }
 }
 
+// NSObject subclass used as representedObject on NSMenuItem — stays on MainActor.
 private final class ServiceMenuPayload: NSObject {
     let config: ServiceConfig
     let content: DetectedContent?

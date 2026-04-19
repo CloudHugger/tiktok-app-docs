@@ -8,21 +8,18 @@ final class ScreenshotCoordinator: ObservableObject {
     @Published var isCapturing = false
     @Published var capturedImage: NSImage?
 
-    private var pendingServices: [ServiceConfig] = []
-
     private init() {
-        NotificationCenter.default.addObserver(self, selector: #selector(startWindowCapture),
-                                               name: .startWindowCapture, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(startSelectionCapture),
-                                               name: .startSelectionCapture, object: nil)
-    }
-
-    @objc private func startWindowCapture() {
-        Task { @MainActor in await captureActiveWindow() }
-    }
-
-    @objc private func startSelectionCapture() {
-        captureScreenSelection()
+        NotificationCenter.default.addObserver(
+            forName: .startWindowCapture, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.captureActiveWindow() }
+        }
+        NotificationCenter.default.addObserver(
+            forName: .startSelectionCapture, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.captureScreenSelection()
+        }
     }
 
     func captureActiveWindow() async {
@@ -30,12 +27,12 @@ final class ScreenshotCoordinator: ObservableObject {
         defer { isCapturing = false }
 
         do {
-            let shareableContent = try await SCShareableContent.excludingDesktopWindows(
+            let content = try await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: true
             )
 
             guard let frontApp = NSWorkspace.shared.frontmostApplication,
-                  let window = shareableContent.windows.first(where: {
+                  let window = content.windows.first(where: {
                       $0.owningApplication?.processID == frontApp.processIdentifier && $0.isOnScreen
                   }) else { return }
 
@@ -48,29 +45,36 @@ final class ScreenshotCoordinator: ObservableObject {
                 configuration: config
             )
 
-            let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            let image = NSImage(cgImage: cgImage,
+                                size: NSSize(width: cgImage.width, height: cgImage.height))
             capturedImage = image
-
             await showPreviewAndSend(image: image)
         } catch {
-            NotificationCenter.default.post(name: .showHUD, object: "Screenshot failed: \(error.localizedDescription)")
+            NotificationCenter.default.post(
+                name: .showHUD,
+                object: "Screenshot failed: \(error.localizedDescription)"
+            )
         }
     }
 
     func captureScreenSelection() {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aicm_selection.png")
+
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        let tmpPath = FileManager.default.temporaryDirectory.appendingPathComponent("aicm_selection.png")
-        task.arguments = ["-i", "-s", tmpPath.path]
+        task.arguments = ["-i", "-s", tmp.path]
 
-        task.terminationHandler = { [weak self] process in
+        // terminationHandler is @Sendable — do NOT capture @MainActor self directly.
+        // Access the singleton via its static property inside a MainActor Task instead.
+        task.terminationHandler = { process in
             guard process.terminationStatus == 0,
-                  let data = try? Data(contentsOf: tmpPath),
+                  let data = try? Data(contentsOf: tmp),
                   let image = NSImage(data: data) else { return }
 
-            Task { @MainActor [weak self] in
-                self?.capturedImage = image
-                await self?.showPreviewAndSend(image: image)
+            Task { @MainActor in
+                ScreenshotCoordinator.shared.capturedImage = image
+                await ScreenshotCoordinator.shared.showPreviewAndSend(image: image)
             }
         }
 
@@ -78,11 +82,12 @@ final class ScreenshotCoordinator: ObservableObject {
     }
 
     private func showPreviewAndSend(image: NSImage) async {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmapRep = NSBitmapImageRep(data: tiffData),
-              let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else { return }
+        guard let tiff   = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let jpeg   = bitmap.representation(using: .jpeg,
+                                                  properties: [.compressionFactor: 0.85]) else { return }
 
-        let content = DetectedContent(payload: .screenshot(jpegData), action: nil)
+        let content = DetectedContent(payload: .screenshot(jpeg), action: nil)
         NotificationCenter.default.post(name: .screenshotReady, object: content)
     }
 }

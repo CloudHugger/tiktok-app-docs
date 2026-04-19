@@ -97,7 +97,11 @@ struct EndpointRow: View {
                         Button {
                             testConnection()
                         } label: {
-                            isFetchingModels ? AnyView(ProgressView().controlSize(.small)) : AnyView(Text("Test"))
+                            if isFetchingModels {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("Test")
+                            }
                         }
                         .buttonStyle(.bordered)
                         .disabled(isFetchingModels)
