@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupNotificationObservers()
         setupDefaultDataIfNeeded()
+        _ = ResponsePanelController.shared   // warm up observer
 
         ContextMenuManager.shared.configure(modelContext: modelContainer.mainContext)
 

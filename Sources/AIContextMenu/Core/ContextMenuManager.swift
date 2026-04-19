@@ -10,27 +10,48 @@ final class ContextMenuManager: NSObject {
 
     private override init() {
         super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onRightClickDetected),
+            name: .rightClickDetected,
+            object: nil
+        )
     }
 
     func configure(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
 
+    @objc private func onRightClickDetected() {
+        Task { @MainActor in await self.injectMenuItems() }
+    }
+
     func startMonitoring() {
         guard AXIsProcessTrusted() else { return }
 
         let mask = CGEventMask(1 << CGEventType.rightMouseDown.rawValue)
+
+        // CGEventTap callback must be a plain C function — it runs on the tap's
+        // thread, not the main thread. We only post a notification here; all
+        // AppKit/SwiftUI work happens on the main actor via the observer.
+        let callback: CGEventTapCallBack = { _, _, event, refcon in
+            guard let refcon else { return Unmanaged.passRetained(event) }
+            // Notify on the main thread — unretained is safe: the manager lives
+            // for the app's lifetime.
+            DispatchQueue.main.async {
+                _ = Unmanaged<ContextMenuManager>.fromOpaque(refcon).takeUnretainedValue()
+                NotificationCenter.default.post(name: .rightClickDetected, object: nil)
+            }
+            return Unmanaged.passRetained(event)
+        }
+
         eventTap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: mask,
-            callback: { proxy, type, event, refcon in
-                let manager = Unmanaged<ContextMenuManager>.fromOpaque(refcon!).takeUnretainedValue()
-                manager.handleRightClick(event: event)
-                return Unmanaged.passRetained(event)
-            },
-            userInfo: Unmanaged.passRetained(self).toOpaque()
+            callback: callback,
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
         )
 
         if let tap = eventTap {
@@ -43,12 +64,6 @@ final class ContextMenuManager: NSObject {
     func stopMonitoring() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
-        }
-    }
-
-    private func handleRightClick(event: CGEvent) {
-        Task { @MainActor in
-            await self.injectMenuItems()
         }
     }
 
@@ -175,6 +190,7 @@ private final class ServiceMenuPayload: NSObject {
 }
 
 extension Notification.Name {
+    static let rightClickDetected    = Notification.Name("com.cloudhugger.AIContextMenu.rightClickDetected")
     static let startWindowCapture    = Notification.Name("com.cloudhugger.AIContextMenu.startWindowCapture")
     static let startSelectionCapture = Notification.Name("com.cloudhugger.AIContextMenu.startSelectionCapture")
 }
